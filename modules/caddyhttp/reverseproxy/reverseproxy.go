@@ -181,6 +181,11 @@ type Handler struct {
 	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
+	// A path that will return 200 OK when an upstream was succesfully selected
+	// without actually proxying the request. This is useful to aggregate health
+	// checks.
+	ReadyPath string `json:"ready_path,omitempty"`
+
 	// If set, the proxy will write very detailed logs about its
 	// inner workings. Enable this only when debugging, as it
 	// will produce a lot of output.
@@ -567,6 +572,12 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		copyHeader(r.Header, reqHeader)
 		r.Host = reqHost
 		h.Headers.Request.ApplyToRequest(r)
+	}
+
+	if h.ReadyPath != "" && r.URL.Path == repl.ReplaceAll(h.ReadyPath, "") {
+		// if the request is for the readiness path, return 200 OK
+		w.WriteHeader(http.StatusOK)
+		return true, nil
 	}
 
 	// proxy the request to that upstream

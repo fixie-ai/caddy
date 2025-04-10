@@ -128,6 +128,9 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
+	// Whether backends are initially considered unhealthy.
+	InitiallyUnhealthy bool `json:"initially_unhealthy,omitempty"`
+
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -187,6 +190,8 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	for _, upstream := range h.Upstreams {
+		upstream.setHealthy(!a.InitiallyUnhealthy)
+
 		// if there's an alternative upstream for health-check provided in the config,
 		// then use it, otherwise use the upstream's dial address. if upstream is used,
 		// then the port is ignored.
