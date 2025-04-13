@@ -190,6 +190,7 @@ func (h *Host) countHealthPass(delta int) error {
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
+	atomic.StoreInt64(&h.activeFails, 0)
 	return nil
 }
 
@@ -200,13 +201,8 @@ func (h *Host) countHealthFail(delta int) error {
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
-	return nil
-}
-
-// resetHealth resets the health check counters.
-func (h *Host) resetHealth() {
 	atomic.StoreInt64(&h.activePasses, 0)
-	atomic.StoreInt64(&h.activeFails, 0)
+	return nil
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
