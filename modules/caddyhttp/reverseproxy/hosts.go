@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,6 +63,9 @@ type Upstream struct {
 	healthCheckPolicy         *PassiveHealthChecks
 	cb                        CircuitBreaker
 	unhealthy                 int32 // accessed atomically; status from active health checker
+	
+	healthHeaderValuesMu      sync.RWMutex // protects healthHeaderValues
+	healthHeaderValues        map[string]string // stores the most recent values of health check headers
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -98,6 +102,15 @@ func (u *Upstream) Full() bool {
 	return u.MaxRequests > 0 && u.Host.NumRequests() >= u.MaxRequests
 }
 
+// GetHealthHeaderValue returns the value of a specific header from the
+// most recent successful health check. Returns an empty string if the 
+// header was not collected or if no successful health check has been performed.
+func (u *Upstream) GetHealthHeaderValue(headerName string) string {
+	u.healthHeaderValuesMu.RLock()
+	defer u.healthHeaderValuesMu.RUnlock()
+	return u.healthHeaderValues[headerName]
+}
+
 // fillDialInfo returns a filled DialInfo for upstream u, using the request
 // context. Note that the returned value is not a pointer.
 func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
@@ -132,6 +145,7 @@ func (u *Upstream) fillHost() {
 		host = existingHost.(*Host)
 	}
 	u.Host = host
+	u.healthHeaderValues = make(map[string]string)
 }
 
 // Host is the basic, in-memory representation of the state of a remote host.

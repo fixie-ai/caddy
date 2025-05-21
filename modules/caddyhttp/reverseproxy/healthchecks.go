@@ -132,6 +132,11 @@ type ActiveHealthChecks struct {
 	// Whether backends are initially considered unhealthy.
 	InitiallyUnhealthy bool `json:"initially_unhealthy,omitempty"`
 
+	// Headers to collect and store from health check responses.
+	// These values will be accessible in the upstream host for use
+	// in response handlers and other modules.
+	ScrapeHeaders []string `json:"scrape_headers,omitempty"`
+
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -474,6 +479,14 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
+				// Clear all scraped headers when upstream becomes unhealthy
+				if len(h.HealthChecks.Active.ScrapeHeaders) > 0 {
+					upstream.healthHeaderValuesMu.Lock()
+					for _, headerName := range h.HealthChecks.Active.ScrapeHeaders {
+						delete(upstream.healthHeaderValues, headerName)
+					}
+					upstream.healthHeaderValuesMu.Unlock()
+				}
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
 			}
 		}
@@ -577,6 +590,22 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	// passed health check parameters, so mark as healthy
 	markHealthy()
+
+	// scrape any requested headers and store their values in the upstream
+	if len(h.HealthChecks.Active.ScrapeHeaders) > 0 {
+		upstream.healthHeaderValuesMu.Lock()
+		// For each header in ScrapeHeaders, either update with new value or delete if not present
+		for _, headerName := range h.HealthChecks.Active.ScrapeHeaders {
+			headerValue := resp.Header.Get(headerName)
+			if headerValue != "" {
+				upstream.healthHeaderValues[headerName] = headerValue
+			} else {
+				// If header is not in response, remove it from stored values
+				delete(upstream.healthHeaderValues, headerName)
+			}
+		}
+		upstream.healthHeaderValuesMu.Unlock()
+	}
 
 	return nil
 }

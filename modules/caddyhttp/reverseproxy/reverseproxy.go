@@ -71,6 +71,7 @@ func init() {
 // `{http.reverse_proxy.duration}` | Total time spent proxying, including selecting an upstream, retries, and writing response.
 // `{http.reverse_proxy.duration_ms}` | Same as 'duration', but in milliseconds.
 // `{http.reverse_proxy.retries}` | The number of retries actually performed to communicate with an upstream.
+// `{http.reverse_proxy.health_header.*}` | The values of headers collected during health checks for the selected upstream.
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.
@@ -562,6 +563,13 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
 	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
 	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+
+	// add health check headers from this upstream as placeholders
+	upstream.healthHeaderValuesMu.RLock()
+	for headerName, headerValue := range upstream.healthHeaderValues {
+		repl.Set("http.reverse_proxy.health_header."+headerName, headerValue)
+	}
+	upstream.healthHeaderValuesMu.RUnlock()
 
 	// mutate request headers according to this upstream;
 	// because we're in a retry loop, we have to copy
